@@ -6,6 +6,10 @@ const jwt = require('jsonwebtoken');
 const keys = require('../../config/keys');
 const passport = require('passport');
 
+// Load Input Validation
+const validRegisterInput = require('../../validation/register');
+const validLoginInput = require('../../validation/login');
+
 // Load User Model
 const User = require("../../models/User");
 const gravatar = require('gravatar');
@@ -27,14 +31,22 @@ router.get("/test", (req, res) => {
 // @description     Tests users route
 // @access Public   Public
 router.post("/register", (req, res) => {
+  const { errors, isValid } = validRegisterInput(req.body);
+
+  // Check Validation
+  if (!isValid) {
+    return res.status(400).json(errors)
+  }
+
+  console.log(req.body);
+
   User.findOne({
       email: req.body.email
     })
     .then(user => {
       if (user) {
-        return res.status(400).json({
-          email: "Email already exists!"
-        });
+        errors.email = 'Email already exists!'
+        return res.status(400).json(errors);
       } else {
         // Create a new User
         const avatar = gravatar.url(req.body.email, {
@@ -59,7 +71,7 @@ router.post("/register", (req, res) => {
             newUser.password = hashPassword;
             newUser.save()
               .then(user => res.json(user))
-              .catch(err => console.log(err));
+              .catch(err => console.log(err, "can't create user!"));
           })
 
         })
@@ -74,59 +86,62 @@ router.post("/register", (req, res) => {
 // @access Public   Public
 
 router.post('/login', (req, res) => {
-  const {
-    email,
-    password
-  } = req.body;
+  const { errors, isValid } = validLoginInput(req.body);
+
+  // Check Validation
+  if (!isValid) {
+    return res.status(400).json(errors)
+  }
+
+  const { email, password } = req.body;
 
   // Find user by email
   User.findOne({
       email
-    })
-    .then(user => {
-      // Check for User
-      if (!user) {
-        return res.status(404).json({
-          email: 'User email not found!'
-        })
-      } else {
-        // Check for password
-        console.log('User is present!');
-        bcrypt.compare(password, user.password)
-          .then(isMatch => {
-            // user exists
-            if (isMatch) {
-              // User matches
+  })
+  .then(user => {
+    // Check for User
+    if (!user) {
+      errors.email = 'User email not found!'
+      return res.status(404).json(errors);
+    }
 
-              const payload = { id: user.id, name: user.name, avatar: user.avatar };  // Create JWT payload
-              
-              // Sign Token
-              const accessToken = jwt.sign(
-                payload,
-                keys.secretOrKey, 
-                { algorithm: "HS256", expiresIn: 3600 },
-                (err, token) => {
-                  console.log('Token is generated!');
-                  return res.json({
-                    success: true,
-                    token: 'Bearer ' + token
-                  })
-                }
-              )
-
-              
-            } else {
-              return res.status(400).json({
-                msg: 'Password is Incorrect!'
-              })
-            }
-          })
-          .catch(err => {
-            throw err;
-          })
-
+    // Check for password
+    // console.log('User is present!');
+    bcrypt.compare(password, user.password)
+    .then(isMatch => {
+      // user exists
+      if (!isMatch) {
+        // if doesn't match
+        errors.password = 'Password is Incorrect!'
+        return res.status(400).json(errors)
       }
+
+      // User matches
+      const payload = { id: user.id, name: user.name, avatar: user.avatar };  // Create JWT payload
+
+      // Sign Token
+      const accessToken = jwt.sign(
+        payload,
+        keys.secretOrKey, 
+        { algorithm: "HS256", expiresIn: "24h" },
+        (err, token) => {
+          if(err) {
+            console.log(err, "can't create session");
+            return;
+          }
+
+          return res.json({ success: true, token: 'Bearer ' + token });
+        }
+      );
+      
+
     })
+    .catch(err => {
+      throw err;
+    })
+
+  })
 
 
 });
